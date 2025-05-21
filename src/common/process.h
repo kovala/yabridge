@@ -67,66 +67,66 @@ std::vector<ghc::filesystem::path> split_path(const std::string_view& path_env);
  * binary called `target`, returning the first match if any.
  */
 std::optional<ghc::filesystem::path> search_in_path(
-    const std::vector<ghc::filesystem::path>& path,
-    const std::string_view& target);
+  const std::vector<ghc::filesystem::path>& path,
+  const std::string_view& target);
 
 /**
  * Helper to create an `environ`-like environment object for passing to the
  * `exec*e()` family of functions.
  */
 class ProcessEnvironment {
-   public:
-    /**
-     * Create a new environment object based on an existing environment
-     * described by an array of null-terminated strings, terminated by a null
-     * pointer. You'll want to pass `environ` here.
-     */
-    ProcessEnvironment(char** initial_env);
+public:
+  /**
+   * Create a new environment object based on an existing environment
+   * described by an array of null-terminated strings, terminated by a null
+   * pointer. You'll want to pass `environ` here.
+   */
+  ProcessEnvironment(char** initial_env);
 
-    /**
-     * Check if an environment variable exists within this environment. Mostly
-     * useful for debugging.
-     */
-    bool contains(const std::string_view& key) const;
+  /**
+   * Check if an environment variable exists within this environment. Mostly
+   * useful for debugging.
+   */
+  bool contains(const std::string_view& key) const;
 
-    /**
-     * Get the value for an environment variable, if it exists in this
-     * environment. Mostly useful for debugging.
-     */
-    std::optional<std::string_view> get(const std::string_view& key) const;
+  /**
+   * Get the value for an environment variable, if it exists in this
+   * environment. Mostly useful for debugging.
+   */
+  std::optional<std::string_view> get(const std::string_view& key) const;
 
-    /**
-     * Add an environment variable to the environment or overwrite an
-     * existing one.
-     */
-    void insert(const std::string& key, const std::string& value);
+  /**
+   * Add an environment variable to the environment or overwrite an
+   * existing one.
+   */
+  void insert(const std::string& key, const std::string& value);
 
-    /**
-     * Remove an environment variable from the environment. Returns the number
-     * of elements erased (to stay consistent with the STL map interface). This
-     * can be higher than 1 if the map contains duplicate or overwritten
-     * environment variables.
-     */
-    size_t erase(const std::string& key);
+  /**
+   * Remove an environment variable from the environment. Returns the number
+   * of elements erased (to stay consistent with the STL map interface). This
+   * can be higher than 1 if the map contains duplicate or overwritten
+   * environment variables.
+   */
+  size_t erase(const std::string& key);
 
-    /**
-     * Create an environ-like object from the updated environment that can be
-     * passed to the `exec*e()` functions. These pointers will be invalidated
-     * when this object changes or when gets dropped.
-     */
-    char* const* make_environ() const;
+  /**
+   * Create an environ-like object from the updated environment that can be
+   * passed to the `exec*e()` functions. These pointers will be invalidated
+   * when this object changes or when gets dropped.
+   */
+  char* const* make_environ() const;
 
-   private:
-    /**
-     * All environment variables read from the constructor argument and those
-     * inserted through `insert()`. These should be in `key=value` format.
-     */
-    std::vector<std::string> variables_;
-    /**
-     * Contains pointers to the strings in `variables`, so we can return a
-     * `char**` in `make_environ()`.
-     */
-    mutable std::vector<char const*> recreated_environ_;
+private:
+  /**
+   * All environment variables read from the constructor argument and those
+   * inserted through `insert()`. These should be in `key=value` format.
+   */
+  std::vector<std::string> variables_;
+  /**
+   * Contains pointers to the strings in `variables`, so we can return a
+   * `char**` in `make_environ()`.
+   */
+  mutable std::vector<char const*> recreated_environ_;
 };
 
 /**
@@ -135,118 +135,117 @@ class ProcessEnvironment {
  * tailored towards yabridge's needs.
  */
 class Process {
-   public:
+public:
+  /**
+   * Marker to indicate that the program was not found.
+   */
+  struct CommandNotFound {
+  };
+
+  /**
+   * A handle to a running process.
+   */
+  class Handle {
+  protected:
+    Handle(pid_t pid);
+
+    friend Process;
+  public:
     /**
-     * Marker to indicate that the program was not found.
+     * Terminates the process when it gets dropped.
      */
-    struct CommandNotFound {};
+    ~Handle();
 
-    /**
-     * A handle to a running process.
-     */
-    class Handle {
-       protected:
-        Handle(pid_t pid);
+    Handle(const Handle&) = delete;
+    Handle& operator=(const Handle&) = delete;
 
-        friend Process;
-
-       public:
-        /**
-         * Terminates the process when it gets dropped.
-         */
-        ~Handle();
-
-        Handle(const Handle&) = delete;
-        Handle& operator=(const Handle&) = delete;
-
-        Handle(Handle&&) noexcept;
-        Handle& operator=(Handle&&) noexcept;
-
-        /**
-         * The process' ID.
-         */
-        pid_t pid() const noexcept;
-
-        /**
-         * Whether the process is still running **and not a zombie**.
-         */
-        bool running() const noexcept;
-
-        /**
-         * Don't terminate the process when this object gets dropped.
-         */
-        void detach() noexcept;
-
-        /**
-         * Forcefully terminate the process by sending `SIGKILL`. Will reap the
-         * process zombie after sending the signal.
-         */
-        void terminate() const noexcept;
-
-        /**
-         * Wait for the process to exit, returning the exit code if it exited
-         * successfully. Returns a nullopt otherwise.
-         */
-        std::optional<int> wait() const noexcept;
-
-       private:
-        /**
-         * If `true`, don't terminate the process when this object gets dropped.
-         * Also set when this object gets moved from.
-         */
-        bool detached_ = false;
-
-        pid_t pid_ = 0;
-    };
-
-    using StringResult =
-        std::variant<std::string, CommandNotFound, std::error_code>;
-    using StatusResult = std::variant<int, CommandNotFound, std::error_code>;
-    using HandleResult = std::variant<Handle, CommandNotFound, std::error_code>;
+    Handle(Handle&&) noexcept;
+    Handle& operator=(Handle&&) noexcept;
 
     /**
-     * Build a process. Use the other functions to add arguments or to
-     * launch the process.
-     *
-     * @param command The name of the command. `$PATH` will be searched for
-     * this command if it is not absolute.
+     * The process' ID.
      */
-    Process(std::string command);
+    pid_t pid() const noexcept;
 
     /**
-     * Add an argument to the command invocation. Returns a reference to this
-     * object for easier chaining.
+     * Whether the process is still running **and not a zombie**.
      */
-    inline Process& arg(std::string arg) {
-        args_.emplace_back(std::move(arg));
-        return *this;
-    }
+    bool running() const noexcept;
 
     /**
-     * Use the specified environment for this command.
-     *
-     * @see environment
+     * Don't terminate the process when this object gets dropped.
      */
-    inline Process& environment(ProcessEnvironment env) {
-        env_ = std::move(env);
-        return *this;
-    }
+    void detach() noexcept;
 
     /**
-     * Spawn the process, leave STDIN, redirect STDERR to `/dev/null`, and
-     * return the first line (without the trailing linefeed) of STDOUT. The
-     * first output line will still be returned even if the process exits with a
-     * non-zero exit code. Uses `posix_spawn()`, leaves file descriptors in
-     * tact.
+     * Forcefully terminate the process by sending `SIGKILL`. Will reap the
+     * process zombie after sending the signal.
      */
-    StringResult spawn_get_stdout_line() const;
+    void terminate() const noexcept;
 
     /**
-     * Spawn the process, leave STDOUT, STDIN and STDERR alone, and return an
-     * empty string if the program ran successfully. Uses `posix_spawn()`,
-     * leaves file descriptors in tact.
+     * Wait for the process to exit, returning the exit code if it exited
+     * successfully. Returns a nullopt otherwise.
      */
-    StatusResult spawn_get_status() const;
+    std::optional<int> wait() const noexcept;
+  private:
+    /**
+     * If `true`, don't terminate the process when this object gets dropped.
+     * Also set when this object gets moved from.
+     */
+    bool detached_ = false;
+
+    pid_t pid_ = 0;
+  };
+
+  using StringResult =
+  std::variant<std::string, CommandNotFound, std::error_code>;
+  using StatusResult = std::variant<int, CommandNotFound, std::error_code>;
+  using HandleResult = std::variant<Handle, CommandNotFound, std::error_code>;
+
+  /**
+   * Build a process. Use the other functions to add arguments or to
+   * launch the process.
+   *
+   * @param command The name of the command. `$PATH` will be searched for
+   * this command if it is not absolute.
+   */
+  Process(std::string command);
+
+  /**
+   * Add an argument to the command invocation. Returns a reference to this
+   * object for easier chaining.
+   */
+  inline Process& arg(std::string arg) {
+    args_.emplace_back(std::move(arg));
+    return *this;
+  }
+
+  /**
+   * Use the specified environment for this command.
+   *
+   * @see environment
+   */
+  inline Process& environment(ProcessEnvironment env) {
+    env_ = std::move(env);
+    return *this;
+  }
+
+  /**
+   * Spawn the process, leave STDIN, redirect STDERR to `/dev/null`, and
+   * return the first line (without the trailing linefeed) of STDOUT. The
+   * first output line will still be returned even if the process exits with a
+   * non-zero exit code. Uses `posix_spawn()`, leaves file descriptors in
+   * tact.
+   */
+  StringResult spawn_get_stdout_line() const;
+
+  /**
+   * Spawn the process, leave STDOUT, STDIN and STDERR alone, and return an
+   * empty string if the program ran successfully. Uses `posix_spawn()`,
+   * leaves file descriptors in tact.
+   */
+  StatusResult spawn_get_status() const;
 
 #ifndef WITHOUT_ASIO
     /**
@@ -261,25 +260,24 @@ class Process {
         asio::posix::stream_descriptor& stderr_pipe) const;
 #endif  // WITHOUT_ASIO
 
-    /**
-     * Spawn the process without waiting for its completion, leave STDIN alone,
-     * and redirect STDOUT and STDERR to a file. Use `posix_spawn()`, closes all
-     * non-STDIO file descriptors. The process will be terminated when the child
-     * process handle gets dropped.
-     */
-    HandleResult spawn_child_redirected(
-        const ghc::filesystem::path& filename) const;
+  /**
+   * Spawn the process without waiting for its completion, leave STDIN alone,
+   * and redirect STDOUT and STDERR to a file. Use `posix_spawn()`, closes all
+   * non-STDIO file descriptors. The process will be terminated when the child
+   * process handle gets dropped.
+   */
+  HandleResult spawn_child_redirected(
+    const ghc::filesystem::path& filename) const;
+private:
+  /**
+   * Create the `argv` array from the command and the arguments. Only valid as
+   * long as the pointers in `args_` at the time of calling stay valid.
+   */
+  char* const* build_argv() const;
 
-   private:
-    /**
-     * Create the `argv` array from the command and the arguments. Only valid as
-     * long as the pointers in `args_` at the time of calling stay valid.
-     */
-    char* const* build_argv() const;
+  std::string command_;
+  std::vector<std::string> args_;
+  std::optional<ProcessEnvironment> env_;
 
-    std::string command_;
-    std::vector<std::string> args_;
-    std::optional<ProcessEnvironment> env_;
-
-    mutable std::vector<char const*> argv_;
+  mutable std::vector<char const*> argv_;
 };

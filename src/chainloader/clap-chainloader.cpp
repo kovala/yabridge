@@ -48,8 +48,7 @@ using ClapPluginBridge = void;
 
 ClapPluginBridge* (*yabridge_module_init)(const char* plugin_path) = nullptr;
 void (*yabridge_module_free)(ClapPluginBridge* instance) = nullptr;
-const void* (*yabridge_module_get_factory)(ClapPluginBridge* instance,
-                                           const char* factory_id) = nullptr;
+const void* (*yabridge_module_get_factory)(ClapPluginBridge* instance, const char* factory_id) = nullptr;
 
 // This bridges the `yabridge_version()` call from the plugin library. This
 // function was added later, so through weird version mixing it may be missing
@@ -60,9 +59,7 @@ const char* (*remote_yabridge_version)() = nullptr;
  * The bridge instance for this chainloader. This is initialized when
  * `clap_entry.init` first gets called.
  */
-std::unique_ptr<ClapPluginBridge, decltype(yabridge_module_free)> bridge(
-    nullptr,
-    nullptr);
+std::unique_ptr<ClapPluginBridge, decltype(yabridge_module_free)> bridge(nullptr, nullptr);
 /**
  * The number of active instances. Incremented when `clap_entry_init()` is
  * called, decremented when `clap_entry_exit()` is called. We'll initialize the
@@ -77,22 +74,22 @@ std::atomic_size_t active_instances = 0;
  * the entry point functions from that file.
  */
 bool initialize_library() {
-    static void* library_handle = nullptr;
-    static std::mutex library_handle_mutex;
+  static void* library_handle = nullptr;
+  static std::mutex library_handle_mutex;
 
-    std::lock_guard lock(library_handle_mutex);
+  std::lock_guard lock(library_handle_mutex);
 
-    // There should be no situation where this library gets loaded and then two
-    // threads immediately start calling functions, but we'll handle that
-    // situation just in case it does happen
-    if (library_handle) {
-        return true;
-    }
+  // There should be no situation where this library gets loaded and then two
+  // threads immediately start calling functions, but we'll handle that
+  // situation just in case it does happen
+  if (library_handle) {
+    return true;
+  }
 
-    library_handle = find_plugin_library(yabridge_clap_plugin_name);
-    if (!library_handle) {
-        return false;
-    }
+  library_handle = find_plugin_library(yabridge_clap_plugin_name);
+  if (!library_handle) {
+    return false;
+  }
 
 #define LOAD_FUNCTION(name)                                                 \
     do {                                                                    \
@@ -104,61 +101,59 @@ bool initialize_library() {
         }                                                                   \
     } while (false)
 
-    LOAD_FUNCTION(yabridge_module_init);
-    LOAD_FUNCTION(yabridge_module_free);
-    LOAD_FUNCTION(yabridge_module_get_factory);
+  LOAD_FUNCTION(yabridge_module_init);
+  LOAD_FUNCTION(yabridge_module_free);
+  LOAD_FUNCTION(yabridge_module_get_factory);
 
-    // This one can be a null pointer if the function does not yet exist in this
-    // yabridge version
-    remote_yabridge_version =
-        reinterpret_cast<decltype(remote_yabridge_version)>(
-            dlsym(library_handle, "yabridge_version"));
+  // This one can be a null pointer if the function does not yet exist in this
+  // yabridge version
+  remote_yabridge_version =
+    reinterpret_cast<decltype(remote_yabridge_version)>(
+      dlsym(library_handle, "yabridge_version"));
 
 #undef LOAD_FUNCTION
 
-    return true;
+  return true;
 }
 
 bool clap_entry_init(const char* /*plugin_path*/) {
-    // This function can be called multiple times, so we should make sure to
-    // only initialize the bridge on the first call
-    if (active_instances.fetch_add(1, std::memory_order_seq_cst) == 0) {
-        if (!initialize_library()) {
-            return false;
-        }
-
-        // You can't change the deleter function with `.reset()` so we'll need
-        // this abomination instead
-        // XXX: The host also provides us with the plugin path which we could
-        //      just use instead. Should we? The advantage of doing it this way
-        //      instead is that we'll have consistent behavior between all
-        //      plugin formats.
-        const fs::path this_plugin_path = get_this_file_location();
-        bridge =
-            decltype(bridge)(yabridge_module_init(this_plugin_path.c_str()),
-                             yabridge_module_free);
-        if (!bridge) {
-            return false;
-        }
+  // This function can be called multiple times, so we should make sure to
+  // only initialize the bridge on the first call
+  if (active_instances.fetch_add(1, std::memory_order_seq_cst) == 0) {
+    if (!initialize_library()) {
+      return false;
     }
 
-    return true;
+    // You can't change the deleter function with `.reset()` so we'll need
+    // this abomination instead
+    // XXX: The host also provides us with the plugin path which we could
+    //      just use instead. Should we? The advantage of doing it this way
+    //      instead is that we'll have consistent behavior between all
+    //      plugin formats.
+    const fs::path this_plugin_path = get_this_file_location();
+    bridge = decltype(bridge)(yabridge_module_init(this_plugin_path.c_str()), yabridge_module_free);
+    if (!bridge) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 void clap_entry_deinit() {
-    // We'll free the bridge when this exits brings the reference count back to
-    // zero
-    if (active_instances.fetch_sub(1, std::memory_order_seq_cst) == 1) {
-        bridge.reset();
-    }
+  // We'll free the bridge when this exits brings the reference count back to
+  // zero
+  if (active_instances.fetch_sub(1, std::memory_order_seq_cst) == 1) {
+    bridge.reset();
+  }
 }
 
 const void* clap_entry_get_factory(const char* factory_id) {
-    // The host should have called `clap_entry.init` first
-    assert(bridge);
-    assert(factory_id);
+  // The host should have called `clap_entry.init` first
+  assert(bridge);
+  assert(factory_id);
 
-    return yabridge_module_get_factory(bridge.get(), factory_id);
+  return yabridge_module_get_factory(bridge.get(), factory_id);
 }
 
 // This visibility attribute doesn't do anything on data with external linkage,
@@ -167,10 +162,10 @@ const void* clap_entry_get_factory(const char* factory_id) {
 #pragma GCC diagnostic ignored "-Wattributes"
 
 CLAP_EXPORT const clap_plugin_entry_t clap_entry = {
-    .clap_version = CLAP_VERSION_INIT,
-    .init = clap_entry_init,
-    .deinit = clap_entry_deinit,
-    .get_factory = clap_entry_get_factory,
+  .clap_version = CLAP_VERSION_INIT,
+  .init = clap_entry_init,
+  .deinit = clap_entry_deinit,
+  .get_factory = clap_entry_get_factory,
 };
 
 #pragma GCC diagnostic pop
@@ -182,9 +177,9 @@ CLAP_EXPORT const clap_plugin_entry_t clap_entry = {
  * rebuilt on every git commit in development.
  */
 extern "C" YABRIDGE_EXPORT const char* yabridge_version() {
-    if (!initialize_library() || !remote_yabridge_version) {
-        return nullptr;
-    }
+  if (!initialize_library() || !remote_yabridge_version) {
+    return nullptr;
+  }
 
-    return remote_yabridge_version();
+  return remote_yabridge_version();
 }
