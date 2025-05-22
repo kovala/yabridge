@@ -50,8 +50,7 @@ constexpr char vendor_name_override[] = "yabridge";
  * implicitly converted to it. The implementation of the constraint requires
  * types to be copy constructable for them to be implicitly convertible. */
 template <typename From, typename To>
-concept same_or_convertible_to =
-    std::same_as<From, To> || std::convertible_to<From, To>;
+concept same_or_convertible_to =  std::same_as<From, To> || std::convertible_to<From, To>;
 
 /**
  * The same as the `std::invocable` concept, but also specifying the result
@@ -59,16 +58,16 @@ concept same_or_convertible_to =
  */
 template <typename F, typename Result, typename... Args>
 concept invocable_returning = requires(F&& f, Result&& result, Args&&... args) {
-    {
-        std::invoke(std::forward<F>(f), std::forward<Args>(args)...)
-        } -> same_or_convertible_to<Result>;
+  {
+    std::invoke(std::forward<F>(f), std::forward<Args>(args)...)
+  } -> same_or_convertible_to<Result>;
 };
 
 // The cannonical overloading template for `std::visitor`, not sure why this
 // isn't part of the standard library
 template <class... Ts>
 struct overload : Ts... {
-    using Ts::operator()...;
+  using Ts::operator()...;
 };
 template <class... Ts>
 overload(Ts...) -> overload<Ts...>;
@@ -158,16 +157,16 @@ std::string url_encode_path(std::string path);
  */
 template <size_t N>
 size_t strlcpy_buffer(char dst[N], const std::string& src) {
-    if constexpr (N == 0) {
-        return src.size();
-    }
-
-    // Make sure there's always room for a null terminator
-    const size_t copy_len = std::min(N - 1, src.size());
-    std::copy(src.c_str(), src.c_str() + copy_len, dst);
-    dst[copy_len] = 0;
-
+  if constexpr (N == 0) {
     return src.size();
+  }
+
+  // Make sure there's always room for a null terminator
+  const size_t copy_len = std::min(N - 1, src.size());
+  std::copy(src.c_str(), src.c_str() + copy_len, dst);
+  dst[copy_len] = 0;
+
+  return src.size();
 }
 
 /**
@@ -183,24 +182,23 @@ size_t strlcpy_buffer(char* dst, const std::string& src, size_t size);
  * previously when it drops out of scope.
  */
 class ScopedFlushToZero {
-   public:
-    ScopedFlushToZero() noexcept;
-    ~ScopedFlushToZero() noexcept;
+public:
+  ScopedFlushToZero() noexcept;
+  ~ScopedFlushToZero() noexcept;
 
-    ScopedFlushToZero(const ScopedFlushToZero&) = delete;
-    ScopedFlushToZero& operator=(const ScopedFlushToZero&) = delete;
+  ScopedFlushToZero(const ScopedFlushToZero&) = delete;
+  ScopedFlushToZero& operator=(const ScopedFlushToZero&) = delete;
 
-    ScopedFlushToZero(ScopedFlushToZero&&) noexcept;
-    ScopedFlushToZero& operator=(ScopedFlushToZero&&) noexcept;
-
-   private:
-    /**
-     * The previous FTZ mode. When we use this on the Wine side, this should
-     * always be disabled. But, we'll make sure to do it correctly anyhow so we
-     * don't accidentally end up disabling FTZ somewhere where it should be
-     * enabled.
-     */
-    std::optional<unsigned int> old_ftz_mode_;
+  ScopedFlushToZero(ScopedFlushToZero&&) noexcept;
+  ScopedFlushToZero& operator=(ScopedFlushToZero&&) noexcept;
+private:
+  /**
+   * The previous FTZ mode. When we use this on the Wine side, this should
+   * always be disabled. But, we'll make sure to do it correctly anyhow so we
+   * don't accidentally end up disabling FTZ somewhere where it should be
+   * enabled.
+   */
+  std::optional<unsigned int> old_ftz_mode_;
 };
 
 /**
@@ -214,75 +212,76 @@ class ScopedFlushToZero {
  */
 template <typename T>
 class ScopedValueCache {
-   public:
-    ScopedValueCache() noexcept {}
+public:
+  ScopedValueCache() noexcept {
+  }
 
-    ScopedValueCache(const ScopedValueCache&) = delete;
-    ScopedValueCache& operator=(const ScopedValueCache&) = delete;
+  ScopedValueCache(const ScopedValueCache&) = delete;
+  ScopedValueCache& operator=(const ScopedValueCache&) = delete;
 
-    // Moving is impossible because of the guard
-    ScopedValueCache(ScopedValueCache&&) = delete;
-    ScopedValueCache& operator=(ScopedValueCache&&) = delete;
+  // Moving is impossible because of the guard
+  ScopedValueCache(ScopedValueCache&&) = delete;
+  ScopedValueCache& operator=(ScopedValueCache&&) = delete;
 
-    /**
-     * Return the cached value, if we're currently caching a value. Will return
-     * a null pointer when this is not the case.
-     */
-    const T* get() const noexcept { return value_ ? &*value_ : nullptr; }
+  /**
+   * Return the cached value, if we're currently caching a value. Will return
+   * a null pointer when this is not the case.
+   */
+  const T* get() const noexcept { return value_ ? &*value_ : nullptr; }
 
-    /**
-     * A guard that will reset the cached value on the `ScopedValueCache` when
-     * it drops out of scope.
-     */
-    class Guard {
-       public:
-        Guard(std::optional<T>& cached_value) noexcept
-            : cached_value_(cached_value) {}
-        ~Guard() noexcept {
-            if (is_active_) {
-                cached_value_.get().reset();
-            }
-        }
-
-        Guard(const Guard&) = delete;
-        Guard& operator=(const Guard&) = delete;
-
-        Guard(Guard&& o) noexcept : cached_value_(std::move(o.cached_value_)) {
-            o.is_active_ = false;
-        }
-        Guard& operator=(Guard&& o) noexcept {
-            cached_value_ = std::move(o.cached_value_);
-            o.is_active_ = false;
-
-            return *this;
-        }
-
-       private:
-        bool is_active_ = true;
-        std::reference_wrapper<std::optional<T>> cached_value_;
-    };
-
-    /**
-     * Temporarily cache `new_value`. This value will be cached as long as the
-     * returned guard is in scope. This guard should not outlive the
-     * `ScopedValueCache` object.
-     *
-     * @param new_value The cached value to store.
-     *
-     * @throw std::runtime_error When we are already caching a value.
-     */
-    Guard set(T new_value) noexcept {
-        value_ = std::move(new_value);
-
-        return Guard(value_);
+  /**
+   * A guard that will reset the cached value on the `ScopedValueCache` when
+   * it drops out of scope.
+   */
+  class Guard {
+  public:
+    Guard(std::optional<T>& cached_value) noexcept :
+      cached_value_(cached_value) {
+    }
+    ~Guard() noexcept {
+      if (is_active_) {
+        cached_value_.get().reset();
+      }
     }
 
-   private:
-    /**
-     * The current value, if `set()` has been called and the guard is still
-     * active.
-     */
-    std::optional<T> value_;
+    Guard(const Guard&) = delete;
+    Guard& operator=(const Guard&) = delete;
+
+    Guard(Guard&& o) noexcept :
+      cached_value_(std::move(o.cached_value_)) {
+      o.is_active_ = false;
+    }
+    Guard& operator=(Guard&& o) noexcept {
+      cached_value_ = std::move(o.cached_value_);
+      o.is_active_ = false;
+
+      return *this;
+    }
+  private:
+    bool is_active_ = true;
+    std::reference_wrapper<std::optional<T>> cached_value_;
+  };
+
+  /**
+   * Temporarily cache `new_value`. This value will be cached as long as the
+   * returned guard is in scope. This guard should not outlive the
+   * `ScopedValueCache` object.
+   *
+   * @param new_value The cached value to store.
+   *
+   * @throw std::runtime_error When we are already caching a value.
+   */
+  Guard set(T new_value) noexcept {
+    value_ = std::move(new_value);
+
+    return Guard(value_);
+  }
+private:
+  /**
+   * The current value, if `set()` has been called and the guard is still
+   * active.
+   */
+  std::optional<T> value_;
 };
 
 /**
@@ -296,41 +295,41 @@ class ScopedValueCache {
  */
 template <typename T>
 class TimedValueCache {
-   public:
-    /**
-     * Return the cached value, if we're currently caching a value. Will return
-     * a null pointer when this is not the case.
-     */
-    const T* get() const noexcept {
-        const time_t now = time(nullptr);
-        return now <= valid_until_ ? &value_ : nullptr;
-    }
+public:
+  /**
+   * Return the cached value, if we're currently caching a value. Will return
+   * a null pointer when this is not the case.
+   */
+  const T* get() const noexcept {
+    const time_t now = time(nullptr);
+    return now <= valid_until_ ? &value_ : nullptr;
+  }
 
-    /**
-     * Return the cached value, if we're currently caching a value. Will return
-     * a null pointer when this is not the case. The lifetime for the value will
-     * be reset to `lifetime_seconds` seconds from now, if the value was still
-     * active.
-     */
-    const T* get_and_keep_alive(unsigned int lifetime_seconds) noexcept {
-        const time_t now = time(nullptr);
-        if (now <= valid_until_) {
-            valid_until_ = now + lifetime_seconds;
-            return &value_;
-        } else {
-            return nullptr;
-        }
+  /**
+   * Return the cached value, if we're currently caching a value. Will return
+   * a null pointer when this is not the case. The lifetime for the value will
+   * be reset to `lifetime_seconds` seconds from now, if the value was still
+   * active.
+   */
+  const T* get_and_keep_alive(unsigned int lifetime_seconds) noexcept {
+    const time_t now = time(nullptr);
+    if (now <= valid_until_) {
+      valid_until_ = now + lifetime_seconds;
+      return &value_;
     }
-
-    /**
-     * Set the cached value for `lifetime_seconds` seconds.
-     */
-    void set(T value, unsigned int lifetime_seconds) noexcept {
-        value_ = value;
-        valid_until_ = time(nullptr) + lifetime_seconds;
+    else {
+      return nullptr;
     }
+  }
 
-   private:
-    T value_;
-    time_t valid_until_ = 0;
+  /**
+   * Set the cached value for `lifetime_seconds` seconds.
+   */
+  void set(T value, unsigned int lifetime_seconds) noexcept {
+    value_ = value;
+    valid_until_ = time(nullptr) + lifetime_seconds;
+  }
+private:
+  T value_;
+  time_t valid_until_ = 0;
 };

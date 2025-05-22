@@ -115,7 +115,6 @@ public:
    * when this object changes or when gets dropped.
    */
   char* const* make_environ() const;
-
 private:
   /**
    * All environment variables read from the constructor argument and those
@@ -248,16 +247,14 @@ public:
   StatusResult spawn_get_status() const;
 
 #ifndef WITHOUT_ASIO
-    /**
-     * Spawn the process without waiting for its completion, leave STDIN alone,
-     * create pipes for STDOUT and STDERR, and assign those to the provided
-     * (empty) stream descriptors. Use `posix_spawn()`, closes all non-STDIO
-     * file descriptors. The process will be terminated when the child process
-     * handle gets dropped.
-     */
-    HandleResult spawn_child_piped(
-        asio::posix::stream_descriptor& stdout_pipe,
-        asio::posix::stream_descriptor& stderr_pipe) const;
+  /**
+   * Spawn the process without waiting for its completion, leave STDIN alone,
+   * create pipes for STDOUT and STDERR, and assign those to the provided
+   * (empty) stream descriptors. Use `posix_spawn()`, closes all non-STDIO
+   * file descriptors. The process will be terminated when the child process
+   * handle gets dropped.
+   */
+  HandleResult spawn_child_piped(asio::posix::stream_descriptor& stdout_pipe, asio::posix::stream_descriptor& stderr_pipe) const;
 #endif  // WITHOUT_ASIO
 
   /**

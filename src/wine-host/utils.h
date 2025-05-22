@@ -45,8 +45,7 @@ class HostBridge;
  * @param entry_point A `fu2::unique_function<void()>*` pointer to a function
  *   pointer, great.
  */
-uint32_t WINAPI
-win32_thread_trampoline(fu2::unique_function<void()>* entry_point);
+uint32_t WINAPI win32_thread_trampoline(fu2::unique_function<void()>* entry_point);
 
 /**
  * A simple RAII wrapper around the Win32 thread API that imitates
@@ -66,59 +65,56 @@ win32_thread_trampoline(fu2::unique_function<void()>* entry_point);
  *   functions.
  */
 class Win32Thread {
-   public:
-    /**
-     * Constructor that does not start any thread yet.
-     */
-    Win32Thread() noexcept;
+public:
+  /**
+   * Constructor that does not start any thread yet.
+   */
+  Win32Thread() noexcept;
 
-    /**
-     * Constructor that immediately starts running the thread. This works
-     * equivalently to `std::jthread`.
-     *
-     * @param entry_point The thread entry point that should be run.
-     * @param parameter The parameter passed to the entry point function.
-     */
-    template <typename Function, typename... Args>
-    Win32Thread(Function fn, Args... args)
-        : handle_(CreateThread(
-                      nullptr,
-                      0,
-                      reinterpret_cast<LPTHREAD_START_ROUTINE>(
-                          win32_thread_trampoline),
-                      // `std::function` does not support functions with move
-                      // captures the function has to be copy-constructable.
-                      // Function2's unique_function lets us capture and move
-                      // our arguments to the lambda so we don't end up with
-                      // dangling references.
-                      new fu2::unique_function<void()>(
-                          [f = std::move(fn),
-                           ... args = std::move(args)]() mutable {
-                              f(std::move(args)...);
-                          }),
-                      0,
-                      nullptr),
-                  CloseHandle) {}
+  /**
+   * Constructor that immediately starts running the thread. This works
+   * equivalently to `std::jthread`.
+   *
+   * @param entry_point The thread entry point that should be run.
+   * @param parameter The parameter passed to the entry point function.
+   */
+  template <typename Function, typename... Args>
+  Win32Thread(Function fn, Args... args) :
+    handle_(CreateThread(
+        nullptr,
+        0,
+        reinterpret_cast<LPTHREAD_START_ROUTINE>(win32_thread_trampoline),
+        // `std::function` does not support functions with move
+        // captures the function has to be copy-constructable.
+        // Function2's unique_function lets us capture and move
+        // our arguments to the lambda so we don't end up with
+        // dangling references.
+        new fu2::unique_function<void()>([f = std::move(fn), ... args = std::move(args)]() mutable {
+          f(std::move(args)...);
+        }),
+        0,
+        nullptr),
+      CloseHandle) {
+  }
 
-    /**
-     * Join (or wait on, since this is WIn32) the thread on shutdown, just like
-     * `std::jthread` does.
-     */
-    ~Win32Thread() noexcept;
+  /**
+   * Join (or wait on, since this is WIn32) the thread on shutdown, just like
+   * `std::jthread` does.
+   */
+  ~Win32Thread() noexcept;
 
-    Win32Thread(const Win32Thread&) = delete;
-    Win32Thread& operator=(const Win32Thread&) = delete;
+  Win32Thread(const Win32Thread&) = delete;
+  Win32Thread& operator=(const Win32Thread&) = delete;
 
-    Win32Thread(Win32Thread&&) noexcept;
-    Win32Thread& operator=(Win32Thread&&) noexcept;
-
-   private:
-    /**
-     * The handle for the thread that is running, will be a null pointer if this
-     * class was constructed with the default constructor.
-     */
-    std::unique_ptr<std::remove_pointer_t<HANDLE>, decltype(&CloseHandle)>
-        handle_;
+  Win32Thread(Win32Thread&&) noexcept;
+  Win32Thread& operator=(Win32Thread&&) noexcept;
+private:
+  /**
+   * The handle for the thread that is running, will be a null pointer if this
+   * class was constructed with the default constructor.
+   */
+  std::unique_ptr<std::remove_pointer_t<HANDLE>, decltype(&CloseHandle)>
+  handle_;
 };
 
 /**
@@ -126,23 +122,22 @@ class Win32Thread {
  * we don't use them.
  */
 class Win32Timer {
-   public:
-    Win32Timer() noexcept;
-    Win32Timer(HWND window_handle,
-               size_t timer_id,
-               unsigned int interval_ms) noexcept;
+public:
+  Win32Timer() noexcept;
+  Win32Timer(HWND window_handle,
+    size_t timer_id,
+    unsigned int interval_ms) noexcept;
 
-    ~Win32Timer() noexcept;
+  ~Win32Timer() noexcept;
 
-    Win32Timer(const Win32Timer&) = delete;
-    Win32Timer& operator=(const Win32Timer&) = delete;
+  Win32Timer(const Win32Timer&) = delete;
+  Win32Timer& operator=(const Win32Timer&) = delete;
 
-    Win32Timer(Win32Timer&&) noexcept;
-    Win32Timer& operator=(Win32Timer&&) noexcept;
-
-   private:
-    HWND window_handle_;
-    std::optional<size_t> timer_id_;
+  Win32Timer(Win32Timer&&) noexcept;
+  Win32Timer& operator=(Win32Timer&&) noexcept;
+private:
+  HWND window_handle_;
+  std::optional<size_t> timer_id_;
 };
 
 /**
@@ -159,212 +154,211 @@ class Win32Timer {
  * terminate.
  */
 class MainContext {
-   public:
-    MainContext();
+public:
+  MainContext();
+
+  /**
+   * Run the IO context. This rest of this class assumes that this is only
+   * done from a single thread.
+   */
+  void run();
+
+  /**
+   * Drop all future work from the IO context. This does not necessarily mean
+   * that the thread that called `main_context_.run()` immediatly returns.
+   */
+  void stop() noexcept;
+
+  /**
+   * Set a new timer interval. We'll do this whenever a new plugin loads,
+   * because we can't know in advance what the plugin's frame rate option is
+   * set to.
+   */
+  void update_timer_interval(
+    std::chrono::steady_clock::duration new_interval) noexcept;
+
+  /**
+   * The RAII guard used to register and unregister host bridge instances from
+   * our watchdog.
+   */
+  class WatchdogGuard {
+  public:
+    WatchdogGuard(HostBridge& bridge,
+      std::unordered_set<HostBridge*>& watched_bridges,
+      std::mutex& watched_bridges_mutex);
+    ~WatchdogGuard() noexcept;
+
+    WatchdogGuard(const WatchdogGuard&) = delete;
+    WatchdogGuard& operator=(const WatchdogGuard&) = delete;
+
+    WatchdogGuard(WatchdogGuard&& o) noexcept;
+    WatchdogGuard& operator=(WatchdogGuard&& o) noexcept;
+  private:
+    /**
+     * Used to facilitate moves.
+     */
+    bool is_active_ = true;
 
     /**
-     * Run the IO context. This rest of this class assumes that this is only
-     * done from a single thread.
+     * The bridge that we will add to the watchdog list when this object
+     * gets created, and that we'll remove from the list again when this
+     * object gets destroyed.
      */
-    void run();
+    HostBridge* bridge_;
 
-    /**
-     * Drop all future work from the IO context. This does not necessarily mean
-     * that the thread that called `main_context_.run()` immediatly returns.
-     */
-    void stop() noexcept;
+    // References to the same two fields on `MainContext`, so we don't have
+    // to use `friend`
+    std::reference_wrapper<std::unordered_set<HostBridge*>>
+    watched_bridges_;
+    std::reference_wrapper<std::mutex> watched_bridges_mutex_;
+  };
 
-    /**
-     * Set a new timer interval. We'll do this whenever a new plugin loads,
-     * because we can't know in advance what the plugin's frame rate option is
-     * set to.
-     */
-    void update_timer_interval(
-        std::chrono::steady_clock::duration new_interval) noexcept;
+  /**
+   * Register a bridge instance for our watchdog. We'll periodically check if
+   * the remote (native) host process that should be connected to the bridge
+   * instance is still alive, and we'll shut down the bridge if it is not to
+   * prevent dangling processes. The returned guard should be stored as a
+   * field in `HostBridge`, and the watchdog will automatically be
+   * unregistered once this guard drops from scope.
+   */
+  WatchdogGuard register_watchdog(HostBridge& bridge);
 
-    /**
-     * The RAII guard used to register and unregister host bridge instances from
-     * our watchdog.
-     */
-    class WatchdogGuard {
-       public:
-        WatchdogGuard(HostBridge& bridge,
-                      std::unordered_set<HostBridge*>& watched_bridges,
-                      std::mutex& watched_bridges_mutex);
-        ~WatchdogGuard() noexcept;
+  /**
+   * Returns `true` if the calling thread is the GUI thread, aka the thread
+   * that called `MainContext::run()`.
+   */
+  inline bool is_gui_thread() const noexcept {
+    return GetCurrentThreadId() == gui_thread_id_.value_or(0);
+  }
 
-        WatchdogGuard(const WatchdogGuard&) = delete;
-        WatchdogGuard& operator=(const WatchdogGuard&) = delete;
+  /**
+   * Asynchronously execute a function inside of this main IO context and
+   * return the results as a future. This is used to make sure that operations
+   * that may involve the Win32 message loop are all run from the same thread.
+   */
+  template <std::invocable F>
+  std::future<std::invoke_result_t<F>> run_in_context(F&& fn) {
+    using Result = std::invoke_result_t<F>;
 
-        WatchdogGuard(WatchdogGuard&& o) noexcept;
-        WatchdogGuard& operator=(WatchdogGuard&& o) noexcept;
+    std::packaged_task<Result()> call_fn(std::forward<F>(fn));
+    std::future<Result> result = call_fn.get_future();
+    asio::dispatch(context_, std::move(call_fn));
 
-       private:
-        /**
-         * Used to facilitate moves.
-         */
-        bool is_active_ = true;
+    return result;
+  }
 
-        /**
-         * The bridge that we will add to the watchdog list when this object
-         * gets created, and that we'll remove from the list again when this
-         * object gets destroyed.
-         */
-        HostBridge* bridge_;
+  /**
+   * Run a task within the IO context. The difference with `run_in_context()`
+   * is that this version does not guarantee that it's going to be executed as
+   * soon as possible, and thus we also won't return a future.
+   */
+  template <std::invocable F>
+  void schedule_task(F&& fn) {
+    asio::post(context_, std::forward<F>(fn));
+  }
 
-        // References to the same two fields on `MainContext`, so we don't have
-        // to use `friend`
-        std::reference_wrapper<std::unordered_set<HostBridge*>>
-            watched_bridges_;
-        std::reference_wrapper<std::mutex> watched_bridges_mutex_;
-    };
+  /**
+   * Start a timer to handle events on a user configurable interval. The
+   * interval is controllable through the `frame_rate` option and defaults to
+   * 60 updates per second.
+   *
+   * @param handler The function that should be executed in the IO context
+   *   when the timer ticks. This should be a function that handles both the
+   *   X11 events and the Win32 message loop.
+   * @param predicate A function returning a boolean to indicate whether
+   *   `handler` should be run. If this returns `false`, then the current
+   *   event loop cycle will be skipped. This is used to prevent the Win32
+   *   message loop from being run when there are partially initialized
+   *   plugins. So far the VST2 versions of T-RackS 5 are the only plugins
+   *   where this has been an issue as those plugins have a race condition
+   *   that will cause them to stall indefinitely in this situation, but who
+   *   knows which other plugins exert similar behaviour.
+   */
+  template <std::invocable F, invocable_returning<bool> P>
+  void async_handle_events(F handler, P predicate) {
+    // Try to keep a steady framerate, but add in delays to let other events
+    // get handled if the GUI message handling somehow takes very long.
+    events_timer_.expires_at(
+      std::max(events_timer_.expiry() + timer_interval_, std::chrono::steady_clock::now() + timer_interval_ / 4)
+    );
 
-    /**
-     * Register a bridge instance for our watchdog. We'll periodically check if
-     * the remote (native) host process that should be connected to the bridge
-     * instance is still alive, and we'll shut down the bridge if it is not to
-     * prevent dangling processes. The returned guard should be stored as a
-     * field in `HostBridge`, and the watchdog will automatically be
-     * unregistered once this guard drops from scope.
-     */
-    WatchdogGuard register_watchdog(HostBridge& bridge);
+    events_timer_.async_wait(
+      [&, handler, predicate](const std::error_code& error) {
+        if (error) {
+          return;
+        }
 
-    /**
-     * Returns `true` if the calling thread is the GUI thread, aka the thread
-     * that called `MainContext::run()`.
-     */
-    inline bool is_gui_thread() const noexcept {
-        return GetCurrentThreadId() == gui_thread_id_.value_or(0);
-    }
+        if (predicate()) {
+          handler();
+        }
 
-    /**
-     * Asynchronously execute a function inside of this main IO context and
-     * return the results as a future. This is used to make sure that operations
-     * that may involve the Win32 message loop are all run from the same thread.
-     */
-    template <std::invocable F>
-    std::future<std::invoke_result_t<F>> run_in_context(F&& fn) {
-        using Result = std::invoke_result_t<F>;
+        async_handle_events(handler, predicate);
+      });
+  }
 
-        std::packaged_task<Result()> call_fn(std::forward<F>(fn));
-        std::future<Result> result = call_fn.get_future();
-        asio::dispatch(context_, std::move(call_fn));
+  /**
+   * The raw IO context. Used to bind our sockets onto. Running things within
+   * this IO context should be done with the functions above.
+   */
+  asio::io_context context_;
+private:
+  /**
+   * Start a timer to periodically check whether the host processes belong to
+   * all active plugin bridges are still alive. We will shut down the plugin
+   * instances where this is not the case, so that this process can gracefully
+   * terminate. In some cases Unix Domain Sockets are left in a state where
+   * it's impossible to tell that the remote isn't alive anymore, and where
+   * `recv()` will just hang indefinitely. We use this watchdog to avoid this.
+   */
+  void async_handle_watchdog_timer(
+    std::chrono::steady_clock::duration interval);
 
-        return result;
-    }
+  /**
+   * The **Windows** thread ID the context is running on, which will be our
+   * GUI thread. Will be a nullopt until `MainContext::run()` has been called.
+   */
+  std::optional<uint32_t> gui_thread_id_;
 
-    /**
-     * Run a task within the IO context. The difference with `run_in_context()`
-     * is that this version does not guarantee that it's going to be executed as
-     * soon as possible, and thus we also won't return a future.
-     */
-    template <std::invocable F>
-    void schedule_task(F&& fn) {
-        asio::post(context_, std::forward<F>(fn));
-    }
+  /**
+   * The timer used to periodically handle X11 events and Win32 messages.
+   */
+  asio::steady_timer events_timer_;
 
-    /**
-     * Start a timer to handle events on a user configurable interval. The
-     * interval is controllable through the `frame_rate` option and defaults to
-     * 60 updates per second.
-     *
-     * @param handler The function that should be executed in the IO context
-     *   when the timer ticks. This should be a function that handles both the
-     *   X11 events and the Win32 message loop.
-     * @param predicate A function returning a boolean to indicate whether
-     *   `handler` should be run. If this returns `false`, then the current
-     *   event loop cycle will be skipped. This is used to prevent the Win32
-     *   message loop from being run when there are partially initialized
-     *   plugins. So far the VST2 versions of T-RackS 5 are the only plugins
-     *   where this has been an issue as those plugins have a race condition
-     *   that will cause them to stall indefinitely in this situation, but who
-     *   knows which other plugins exert similar behaviour.
-     */
-    template <std::invocable F, invocable_returning<bool> P>
-    void async_handle_events(F handler, P predicate) {
-        // Try to keep a steady framerate, but add in delays to let other events
-        // get handled if the GUI message handling somehow takes very long.
-        events_timer_.expires_at(
-            std::max(events_timer_.expiry() + timer_interval_,
-                     std::chrono::steady_clock::now() + timer_interval_ / 4));
-        events_timer_.async_wait(
-            [&, handler, predicate](const std::error_code& error) {
-                if (error) {
-                    return;
-                }
+  /**
+   * The time between timer ticks in `async_handle_events`. This gets
+   * initialized at 60 ticks per second, and when a plugin load we'll update
+   * this value based on the plugin's `frame_rate` option.
+   *
+   * @see update_timer_interval
+   */
+  std::chrono::steady_clock::duration timer_interval_ =
+    std::chrono::milliseconds(1000) / 60;
 
-                if (predicate()) {
-                    handler();
-                }
+  /**
+   * The IO context used for the watchdog described below.
+   */
+  asio::io_context watchdog_context_;
 
-                async_handle_events(handler, predicate);
-            });
-    }
+  /**
+   * The timer used to periodically check if the host processes are still
+   * active, so we can shut down a plugin's sockets (and with that the plugin
+   * itself) when the host has exited and the sockets are somehow not closed
+   * yet..
+   */
+  asio::steady_timer watchdog_timer_;
 
-    /**
-     * The raw IO context. Used to bind our sockets onto. Running things within
-     * this IO context should be done with the functions above.
-     */
-    asio::io_context context_;
+  /**
+   * All of the bridges we're watching as part of our watchdog. We're storing
+   * pointers for efficiency's sake, since reference wrappers don't implement
+   * any comparison operators.
+   */
+  std::unordered_set<HostBridge*> watched_bridges_;
+  std::mutex watched_bridges_mutex_;
 
-   private:
-    /**
-     * Start a timer to periodically check whether the host processes belong to
-     * all active plugin bridges are still alive. We will shut down the plugin
-     * instances where this is not the case, so that this process can gracefully
-     * terminate. In some cases Unix Domain Sockets are left in a state where
-     * it's impossible to tell that the remote isn't alive anymore, and where
-     * `recv()` will just hang indefinitely. We use this watchdog to avoid this.
-     */
-    void async_handle_watchdog_timer(
-        std::chrono::steady_clock::duration interval);
-
-    /**
-     * The **Windows** thread ID the context is running on, which will be our
-     * GUI thread. Will be a nullopt until `MainContext::run()` has been called.
-     */
-    std::optional<uint32_t> gui_thread_id_;
-
-    /**
-     * The timer used to periodically handle X11 events and Win32 messages.
-     */
-    asio::steady_timer events_timer_;
-
-    /**
-     * The time between timer ticks in `async_handle_events`. This gets
-     * initialized at 60 ticks per second, and when a plugin load we'll update
-     * this value based on the plugin's `frame_rate` option.
-     *
-     * @see update_timer_interval
-     */
-    std::chrono::steady_clock::duration timer_interval_ =
-        std::chrono::milliseconds(1000) / 60;
-
-    /**
-     * The IO context used for the watchdog described below.
-     */
-    asio::io_context watchdog_context_;
-
-    /**
-     * The timer used to periodically check if the host processes are still
-     * active, so we can shut down a plugin's sockets (and with that the plugin
-     * itself) when the host has exited and the sockets are somehow not closed
-     * yet..
-     */
-    asio::steady_timer watchdog_timer_;
-
-    /**
-     * All of the bridges we're watching as part of our watchdog. We're storing
-     * pointers for efficiency's sake, since reference wrappers don't implement
-     * any comparison operators.
-     */
-    std::unordered_set<HostBridge*> watched_bridges_;
-    std::mutex watched_bridges_mutex_;
-
-    /**
-     * The thread where we run our watchdog timer, to shut down plugins after
-     * the native plugin host process they're supposed to be connected to has
-     * died.
-     */
-    Win32Thread watchdog_handler_;
+  /**
+   * The thread where we run our watchdog timer, to shut down plugins after
+   * the native plugin host process they're supposed to be connected to has
+   * died.
+   */
+  Win32Thread watchdog_handler_;
 };
