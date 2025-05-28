@@ -1,22 +1,17 @@
 FROM debian:bookworm-slim
 
-# This Dockerfile is similar to the other image made for Ubuntu 18.04. See how
-# this is used in the workflow files under
-# https://github.com/robbert-vdh/yabridge/tree/master/.github/workflows
-
-# dpkg might otherwise prompt us to select a timezoone while installing tzdata,
-# even though we can't
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Set up repositories needed for Wine and its development toolchain
 RUN apt-get update && \
-  apt-get install -y software-properties-common git wget && \
+  apt install -y software-properties-common git wget && \
   dpkg --add-architecture i386 && \
-  mkdir -pm755 /etc/apt/keyrings && \
-  wget -O - https://dl.winehq.org/wine-builds/winehq.key | sudo gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key - && \
-  wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources
+  mkdir -pm755 /etc/apt/keyrings
 
-# Install Wine and its development headers
+RUN wget -O - https://dl.winehq.org/wine-builds/winehq.key | gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key -
+
+RUN wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources
+
 RUN apt-get update && \
   apt-get install -y --install-recommends winehq-devel wine-devel-dev && \
   rm -rf /var/lib/apt/lists/*
