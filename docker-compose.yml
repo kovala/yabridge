@@ -11,4 +11,3 @@ services:
       - .:/app:z
       - ./docker/run.sh:/app/run.sh:z
     command: sh run.sh
-    
