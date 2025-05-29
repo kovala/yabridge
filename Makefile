@@ -1,5 +1,7 @@
 start:
 	meson setup build --reconfigure --buildtype=release --cross-file=cross-wine.conf --unity=on --unity-size=1000
 ninja:
-	ninja -C build
+	ninja -C build-docker
 
+fix-owner:
+	sudo chown $(USER):$(USER) -R subprojects || true
