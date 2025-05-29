@@ -76,7 +76,6 @@ std::atomic_size_t active_instances = 0;
 bool initialize_library() {
   static void* library_handle = nullptr;
   static std::mutex library_handle_mutex;
-
   std::lock_guard lock(library_handle_mutex);
 
   // There should be no situation where this library gets loaded and then two

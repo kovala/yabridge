@@ -34,7 +34,7 @@ void* find_plugin_library(const std::string& name) {
     // If `name` exists right next to the Wine plugin host binary, then
     // we'll try loading that. Otherwise we'll fall back to regular
     // `dlopen()` for distro packaged versions of yabridge
-    const std::vector<fs::path> search_path = get_augmented_search_path();
+    auto search_path = get_augmented_search_path();
     if (const auto& yabridge_host_path = search_in_path(search_path, yabridge_host_name)) {
       const fs::path candidate = yabridge_host_path->parent_path() / name;
       if (fs::exists(candidate)) {
@@ -42,10 +42,8 @@ void* find_plugin_library(const std::string& name) {
       }
     }
 
-    if (const auto& yabridge_host_32_path =
-      search_in_path(search_path, yabridge_host_name_32bit)) {
-      const fs::path candidate =
-        yabridge_host_32_path->parent_path() / name;
+    if (const auto& yabridge_host_32_path = search_in_path(search_path, yabridge_host_name_32bit)) {
+      const fs::path candidate = yabridge_host_32_path->parent_path() / name;
       if (fs::exists(candidate)) {
         return dlopen(candidate.c_str(), RTLD_LAZY | RTLD_LOCAL);
       }
@@ -60,19 +58,14 @@ void* find_plugin_library(const std::string& name) {
     // you really, really shouldn't install yabridge there, please, thank
     // you). Yabridgectl searches through these same directories.
     for (const auto& lib_dir : {
-           "/usr/lib",
-           "/usr/lib/x86_64-linux-gnu",
-           "/usr/lib64",
-           "/usr/local/lib",
-           "/usr/local/lib/x86_64-linux-gnu",
-           "/usr/local/lib64",
-         }) {
+      "/usr/lib", "/usr/lib/x86_64-linux-gnu", "/usr/lib64",
+      "/usr/local/lib", "/usr/local/lib/x86_64-linux-gnu", "/usr/local/lib64",
+    }) {
       const fs::path candidate = fs::path(lib_dir) / name;
       if (void* handle = dlopen(candidate.c_str(), RTLD_LAZY | RTLD_LOCAL)) {
         return handle;
       }
     }
-
     return nullptr;
   };
 

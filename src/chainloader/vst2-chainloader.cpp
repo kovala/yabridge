@@ -46,8 +46,7 @@ using AEffect = void;
 
 // These functions are loaded from `libyabridge-vst3.so` the first time
 // `VSTPluginMain` gets called
-AEffect* (*yabridge_plugin_init)(audioMasterCallback host_callback,
-                                 const char* plugin_path) = nullptr;
+AEffect* (*yabridge_plugin_init)(audioMasterCallback host_callback, const char* plugin_path) = nullptr;
 
 // This bridges the `yabridge_version()` call from the plugin library. This
 // function was added later, so through weird version mixing it may be missing
@@ -60,22 +59,21 @@ const char* (*remote_yabridge_version)() = nullptr;
  * the entry point functions from that file.
  */
 bool initialize_library() {
-    static void* library_handle = nullptr;
-    static std::mutex library_handle_mutex;
+  static void* library_handle = nullptr;
+  static std::mutex library_handle_mutex;
+  std::lock_guard lock(library_handle_mutex);
 
-    std::lock_guard lock(library_handle_mutex);
+  // There should be no situation where this library gets loaded and then two
+  // threads immediately start calling functions, but we'll handle that
+  // situation just in case it does happen
+  if (library_handle) {
+    return true;
+  }
 
-    // There should be no situation where this library gets loaded and then two
-    // threads immediately start calling functions, but we'll handle that
-    // situation just in case it does happen
-    if (library_handle) {
-        return true;
-    }
-
-    library_handle = find_plugin_library(yabridge_vst2_plugin_name);
-    if (!library_handle) {
-        return false;
-    }
+  library_handle = find_plugin_library(yabridge_vst2_plugin_name);
+  if (!library_handle) {
+    return false;
+  }
 
 #define LOAD_FUNCTION(name)                                                 \
     do {                                                                    \
@@ -87,38 +85,33 @@ bool initialize_library() {
         }                                                                   \
     } while (false)
 
-    LOAD_FUNCTION(yabridge_plugin_init);
+  LOAD_FUNCTION(yabridge_plugin_init);
 
-    // This one can be a null pointer if the function does not yet exist in this
-    // yabridge version
-    remote_yabridge_version =
-        reinterpret_cast<decltype(remote_yabridge_version)>(
-            dlsym(library_handle, "yabridge_version"));
-
+  // This one can be a null pointer if the function does not yet exist in this
+  // yabridge version
+  remote_yabridge_version = reinterpret_cast<decltype(remote_yabridge_version)>(dlsym(library_handle, "yabridge_version"));
 #undef LOAD_FUNCTION
 
-    return true;
+  return true;
 }
 
 extern "C" YABRIDGE_EXPORT AEffect* VSTPluginMain(
-    audioMasterCallback host_callback) {
-    assert(host_callback);
+  audioMasterCallback host_callback) {
+  assert(host_callback);
 
-    if (!initialize_library()) {
-        return nullptr;
-    }
-
-    const fs::path this_plugin_path = get_this_file_location();
-    return yabridge_plugin_init(host_callback, this_plugin_path.c_str());
+  if (!initialize_library()) {
+    return nullptr;
+  }
+  const fs::path this_plugin_path = get_this_file_location();
+  return yabridge_plugin_init(host_callback, this_plugin_path.c_str());
 }
 
 // XXX: GCC doens't seem to have a clean way to let you define an arbitrary
 //      function called 'main'. Even JUCE does it this way, so it should be
 //      safe.
-extern "C" YABRIDGE_EXPORT AEffect* deprecated_main(
-    audioMasterCallback audioMaster) asm("main");
+extern "C" YABRIDGE_EXPORT AEffect* deprecated_main(audioMasterCallback audioMaster) asm("main");
 YABRIDGE_EXPORT AEffect* deprecated_main(audioMasterCallback audioMaster) {
-    return VSTPluginMain(audioMaster);
+  return VSTPluginMain(audioMaster);
 }
 
 /**
@@ -128,9 +121,8 @@ YABRIDGE_EXPORT AEffect* deprecated_main(audioMasterCallback audioMaster) {
  * rebuilt on every git commit in development.
  */
 extern "C" YABRIDGE_EXPORT const char* yabridge_version() {
-    if (!initialize_library() || !remote_yabridge_version) {
-        return nullptr;
-    }
-
-    return remote_yabridge_version();
+  if (!initialize_library() || !remote_yabridge_version) {
+    return nullptr;
+  }
+  return remote_yabridge_version();
 }
