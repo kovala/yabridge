@@ -5,9 +5,8 @@ services:
       dockerfile: docker/latest.Dockerfile
     env_file:
       - .env
-    user: '1000:1000'
     tty: false
     volumes:
       - .:/app:z
-      - ./docker/run.sh:/app/run.sh:z
-    command: sh run.sh
+      - ./docker/.bashrc:/root/.bashrc
+#    command: sh run.sh

@@ -20,7 +20,8 @@ project(
 # need to pass `-Dbitbridge=true`. We just make sure that we won't build
 # any 64-bit binaries in that situation.
 is_64bit_system = build_machine.cpu_family() not in ['x86', 'arm']
-with_32bit_libraries = (not is_64bit_system) or get_option('build.cpp_args').contains('-m32')
+#with_32bit_libraries = (not is_64bit_system) or get_option('build.cpp_args').contains('-m32')
+with_32bit_libraries = false
 with_bitbridge = get_option('bitbridge')
 with_clap = get_option('clap')
 with_system_asio = get_option('system-asio')
