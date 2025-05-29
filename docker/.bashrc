@@ -62,6 +62,7 @@ alias l='ls $LS_OPTIONS -lA'
 
 # build/bin/pants-completion.bash
 [[ -f ~/pants-completion.bash ]] && source pants-completion.bash
+[[ -f /etc/bash_completion ]] && source /etc/bash_completion
 
 export PS1=${On_Blue}${Time12h}${Color_Off}' '${Purple}'\u'${Color_Off}'@'${URed}'pilvik:'${Color_Off}${BYellow}${PathShort}${Color_Off}${Green}${Color_Off}'\$ '
 

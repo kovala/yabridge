@@ -17,10 +17,12 @@ RUN apt update && apt install -y --install-recommends winehq-devel wine-devel-de
 RUN apt update && \
   apt install -y build-essential cmake pkg-config python3-pip pipx && \
   apt install -y libdbus-1-dev libxcb1-dev libxcb1-dev:i386 && \
-  apt install -y gcc gcc-multilib g++ g++-multilib && \
-  apt install -y fd-find exa && \
+  apt install -y gcc gcc-multilib g++ g++-multilib
+
+RUN apt install -y fd-find exa && \
   pipx install meson && \
   pipx install ninja
 
+RUN apt install bash-completion
 
 WORKDIR /app

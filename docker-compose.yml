@@ -9,5 +9,7 @@ services:
     volumes:
       - .:/app:z
       - ./docker/.bashrc:/root/.bashrc
-    entrypoint: sh run.sh
-    command: "/bin/sh -c 'trap exit TERM; \while :; do sleep 1h & wait $${!}; done;'"
+    working_dir: /app
+    #entrypoint: 'bash run.sh'
+    command: "/bin/sh -c 'trap exit TERM; while :; do sleep 1h & wait $${!}; done;'"
+
