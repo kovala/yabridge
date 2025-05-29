@@ -34,9 +34,9 @@ RUN apt update && \
 #   apt install -y libdbus-1-dev libxcb1-dev libxcb1-dev:i386 && \
 #   apt install -y gcc gcc-multilib g++ g++-multilib
 
-RUN apt install -y fd-find exa && \
-  pipx install meson && \
-  pipx install ninja
+RUN apt install -y fd-find eza \
+  && pipx install meson \
+  && pipx install ninja
 
 RUN apt install bash-completion
 
