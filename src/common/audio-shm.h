@@ -46,170 +46,169 @@
  * the same shared memory region.
  */
 class AudioShmBuffer {
-   public:
+public:
+  /**
+   * The parameters needed for creating, configuring and connecting to a
+   * shared audio buffer object. This is done on the Wine plugin host. For
+   * this we need to know the plugin's bus/channel configuration, whether the
+   * host is going to ask the plugin to process 32-bit or 64-bit floating
+   * point audio, and the maximum size of the samples per audio buffer. The
+   * bus/channel configuration can be queried directly from the plugin. For
+   * VST2 plugins the other information is passed before the call to
+   * `effMainsChanged` through `effSetProcessPrecision` and `effSetBlockSize`,
+   * which would thus need to be kept track of. For VST3 plugins this is all
+   * sent as part of the `Steinberg::Vst::ProcessSetup` object.
+   */
+  struct Config {
     /**
-     * The parameters needed for creating, configuring and connecting to a
-     * shared audio buffer object. This is done on the Wine plugin host. For
-     * this we need to know the plugin's bus/channel configuration, whether the
-     * host is going to ask the plugin to process 32-bit or 64-bit floating
-     * point audio, and the maximum size of the samples per audio buffer. The
-     * bus/channel configuration can be queried directly from the plugin. For
-     * VST2 plugins the other information is passed before the call to
-     * `effMainsChanged` through `effSetProcessPrecision` and `effSetBlockSize`,
-     * which would thus need to be kept track of. For VST3 plugins this is all
-     * sent as part of the `Steinberg::Vst::ProcessSetup` object.
+     * The unique identifier for this shared memory object. The backing file
+     * will be created in `/dev/shm` by the operating system.
      */
-    struct Config {
-        /**
-         * The unique identifier for this shared memory object. The backing file
-         * will be created in `/dev/shm` by the operating system.
-         */
-        std::string name;
-
-        /**
-         * The size of the shared memory object **in bytes** (so not samples).
-         * This should be large enough to hold all input and output buffers, and
-         * it depends on whether the host is going to pass 32-bit single
-         * precision or 64-bit double precision audio to the plugin.
-         */
-        uint32_t size;
-
-        /**
-         * Offsets **in bytes** within the shared memory object for an input
-         * audio channel, indexed by `[bus][channel]`. For VST2 plugins the bus
-         * will always be 0. This can be used later to retrieve a pointer to the
-         * audio channel.
-         *
-         * The offsets are in bytes rather than in samples to accommodate mixed
-         * 32-bit and 64-bit IO. This is allowed in CLAP. If a port can do
-         * either 32-bit or 64-bit audio, we'll reserve enough space for 64-bit
-         * samples and then just not use the latter half if the host ends up
-         * using 32-bit samples.
-         */
-        std::vector<std::vector<uint32_t>> input_offsets;
-        /**
-         * Offsets **in bytes** within the shared memory object for an output
-         * audio channel, indexed by `[bus][channel]`. See `input_offsets` for
-         * more details.
-         */
-        std::vector<std::vector<uint32_t>> output_offsets;
-
-        template <typename S>
-        void serialize(S& s) {
-            s.text1b(name, 1024);
-            s.value4b(size);
-            s.container(input_offsets, 8192, [](S& s, auto& offsets) {
-                s.container4b(offsets, 8192);
-            });
-            s.container(output_offsets, 8192, [](S& s, auto& offsets) {
-                s.container4b(offsets, 8192);
-            });
-        }
-    };
+    std::string name;
 
     /**
-     * Connect to or create the shared memory object and map it to this
-     * process's memory. The configuration is created on the Wine side using the
-     * process described in `Config`'s docstring.
+     * The size of the shared memory object **in bytes** (so not samples).
+     * This should be large enough to hold all input and output buffers, and
+     * it depends on whether the host is going to pass 32-bit single
+     * precision or 64-bit double precision audio to the plugin.
+     */
+    uint32_t size;
+
+    /**
+     * Offsets **in bytes** within the shared memory object for an input
+     * audio channel, indexed by `[bus][channel]`. For VST2 plugins the bus
+     * will always be 0. This can be used later to retrieve a pointer to the
+     * audio channel.
      *
-     * @throw std::system_error If the shared memory object could not be
-     *   created or mapped.
+     * The offsets are in bytes rather than in samples to accommodate mixed
+     * 32-bit and 64-bit IO. This is allowed in CLAP. If a port can do
+     * either 32-bit or 64-bit audio, we'll reserve enough space for 64-bit
+     * samples and then just not use the latter half if the host ends up
+     * using 32-bit samples.
      */
-    AudioShmBuffer(const Config& config);
-
+    std::vector<std::vector<uint32_t>> input_offsets;
     /**
-     * Destroy the shared memory object. Either side dropping the object will
-     * cause the object to get destroyed in an effort to avoid memory leaks
-     * caused by crashing plugins or hosts.
+     * Offsets **in bytes** within the shared memory object for an output
+     * audio channel, indexed by `[bus][channel]`. See `input_offsets` for
+     * more details.
      */
-    ~AudioShmBuffer() noexcept;
+    std::vector<std::vector<uint32_t>> output_offsets;
 
-    AudioShmBuffer(const AudioShmBuffer&) = delete;
-    AudioShmBuffer& operator=(const AudioShmBuffer&) = delete;
-
-    AudioShmBuffer(AudioShmBuffer&&) noexcept;
-    AudioShmBuffer& operator=(AudioShmBuffer&&) noexcept;
-
-    /**
-     * Adapt to a new buffer size or channel layout. The name of the buffer
-     * needs to remain the same.
-     *
-     * @throw `std::invalid_argument` If the config is for a buffer with a
-     *   different name.
-     * @throw std::system_error If the shared memory object could not be mapped.
-     */
-    void resize(const Config& new_config);
-
-    inline size_t num_input_channels(const uint32_t bus) const {
-        return config_.input_offsets[bus].size();
+    template <typename S>
+    void serialize(S& s) {
+      s.text1b(name, 1024);
+      s.value4b(size);
+      s.container(input_offsets, 8192, [](S& s, auto& offsets) {
+        s.container4b(offsets, 8192);
+      });
+      s.container(output_offsets, 8192, [](S& s, auto& offsets) {
+        s.container4b(offsets, 8192);
+      });
     }
+  };
 
-    inline size_t num_output_channels(const uint32_t bus) const {
-        return config_.output_offsets[bus].size();
-    }
+  /**
+   * Connect to or create the shared memory object and map it to this
+   * process's memory. The configuration is created on the Wine side using the
+   * process described in `Config`'s docstring.
+   *
+   * @throw std::system_error If the shared memory object could not be
+   *   created or mapped.
+   */
+  AudioShmBuffer(const Config& config);
 
-    /**
-     * Get a pointer to the part of the buffer where this input audio channel is
-     * stored in. Both the bus and the channel indices start at zero. These
-     * addresses might change after a call to `resize()`.
-     */
-    template <typename T>
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    T* input_channel_ptr(const uint32_t bus, const uint32_t channel) noexcept {
-        return reinterpret_cast<T*>(shm_bytes_ +
-                                    config_.input_offsets[bus][channel]);
-    }
+  /**
+   * Destroy the shared memory object. Either side dropping the object will
+   * cause the object to get destroyed in an effort to avoid memory leaks
+   * caused by crashing plugins or hosts.
+   */
+  ~AudioShmBuffer() noexcept;
 
-    template <typename T>
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    const T* input_channel_ptr(const uint32_t bus,
-                               const uint32_t channel) const noexcept {
-        return reinterpret_cast<const T*>(shm_bytes_ +
-                                          config_.input_offsets[bus][channel]);
-    }
+  AudioShmBuffer(const AudioShmBuffer&) = delete;
+  AudioShmBuffer& operator=(const AudioShmBuffer&) = delete;
 
-    /**
-     * Get a pointer to the part of the buffer where this output audio channel
-     * is stored in. Both the bus and the channel indices start at zero. These
-     * addresses might change after a call to `resize()`.
-     */
-    template <typename T>
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    T* output_channel_ptr(const uint32_t bus, const uint32_t channel) noexcept {
-        return reinterpret_cast<T*>(shm_bytes_ +
-                                    config_.output_offsets[bus][channel]);
-    }
+  AudioShmBuffer(AudioShmBuffer&&) noexcept;
+  AudioShmBuffer& operator=(AudioShmBuffer&&) noexcept;
 
-    template <typename T>
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    const T* output_channel_ptr(const uint32_t bus,
-                                const uint32_t channel) const noexcept {
-        return reinterpret_cast<const T*>(shm_bytes_ +
-                                          config_.output_offsets[bus][channel]);
-    }
+  /**
+   * Adapt to a new buffer size or channel layout. The name of the buffer
+   * needs to remain the same.
+   *
+   * @throw `std::invalid_argument` If the config is for a buffer with a
+   *   different name.
+   * @throw std::system_error If the shared memory object could not be mapped.
+   */
+  void resize(const Config& new_config);
 
-    Config config_;
+  inline size_t num_input_channels(const uint32_t bus) const {
+    return config_.input_offsets[bus].size();
+  }
 
-   private:
-    /**
-     * Resize the shared memory object, and set up the memory mapping.
-     *
-     * @throw std::system_error If the shared memory object could not be mapped.
-     */
-    void setup_mapping();
+  inline size_t num_output_channels(const uint32_t bus) const {
+    return config_.output_offsets[bus].size();
+  }
 
-    /**
-     * The file descriptor for our shared memory object.
-     */
-    int shm_fd_ = 0;
-    /**
-     * A pointer to our mapped shared memory region.
-     */
-    uint8_t* shm_bytes_ = nullptr;
-    /**
-     * The size of the mapped shared memory area, used for remapping.
-     */
-    size_t shm_size_ = 0;
+  /**
+   * Get a pointer to the part of the buffer where this input audio channel is
+   * stored in. Both the bus and the channel indices start at zero. These
+   * addresses might change after a call to `resize()`.
+   */
+  template <typename T>
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  T* input_channel_ptr(const uint32_t bus, const uint32_t channel) noexcept {
+    return reinterpret_cast<T*>(shm_bytes_ +
+      config_.input_offsets[bus][channel]);
+  }
 
-    bool is_moved_ = false;
+  template <typename T>
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  const T* input_channel_ptr(const uint32_t bus,
+    const uint32_t channel) const noexcept {
+    return reinterpret_cast<const T*>(shm_bytes_ +
+      config_.input_offsets[bus][channel]);
+  }
+
+  /**
+   * Get a pointer to the part of the buffer where this output audio channel
+   * is stored in. Both the bus and the channel indices start at zero. These
+   * addresses might change after a call to `resize()`.
+   */
+  template <typename T>
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  T* output_channel_ptr(const uint32_t bus, const uint32_t channel) noexcept {
+    return reinterpret_cast<T*>(shm_bytes_ +
+      config_.output_offsets[bus][channel]);
+  }
+
+  template <typename T>
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  const T* output_channel_ptr(const uint32_t bus,
+    const uint32_t channel) const noexcept {
+    return reinterpret_cast<const T*>(shm_bytes_ +
+      config_.output_offsets[bus][channel]);
+  }
+
+  Config config_;
+private:
+  /**
+   * Resize the shared memory object, and set up the memory mapping.
+   *
+   * @throw std::system_error If the shared memory object could not be mapped.
+   */
+  void setup_mapping();
+
+  /**
+   * The file descriptor for our shared memory object.
+   */
+  int shm_fd_ = 0;
+  /**
+   * A pointer to our mapped shared memory region.
+   */
+  uint8_t* shm_bytes_ = nullptr;
+  /**
+   * The size of the mapped shared memory area, used for remapping.
+   */
+  size_t shm_size_ = 0;
+
+  bool is_moved_ = false;
 };
