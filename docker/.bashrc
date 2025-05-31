@@ -57,7 +57,7 @@ Jobs="\j"
 export LS_OPTIONS='--color=auto'
 # eval "`dircolors`"
 alias ls='ls $LS_OPTIONS'
-alias ll='ls $LS_OPTIONS -la'
+# alias ll='ls $LS_OPTIONS -la'
 alias l='ls $LS_OPTIONS -lA'
 
 # build/bin/pants-completion.bash
@@ -74,7 +74,8 @@ alias mv='mv -iv'
 alias grep='grep --color=auto -in'
 alias ..='cd ..'
 
-alias ll='ls -halF'
+# alias ll='ls -halF'
+alias ll='eza -la -s type --icons'
 alias la='ls -A'
 alias l='ls -CF'
 
