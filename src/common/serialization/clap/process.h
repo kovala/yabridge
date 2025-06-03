@@ -28,9 +28,7 @@
 
 // Serialization messages for `clap/process.h`
 
-namespace clap {
-namespace process {
-
+namespace clap::process {
 /**
  * A serializable wrapper around `clap_process_t`. This works exactly the same
  * as the process data wrapper for VST3. At the start of a process cycle all
@@ -53,15 +51,15 @@ namespace process {
  * results of our audio processing.
  */
 class Process {
-   public:
-    /**
+public:
+  /**
      * Initialize the process data. We only provide a default constructor here,
      * because we need to fill the existing object with new data every
      * processing cycle to avoid reallocating a new object every time.
      */
-    Process() noexcept;
+  Process() noexcept;
 
-    /**
+  /**
      * Copy data from a host provided `clap_process_T` object to this struct
      * during a process call. This struct can then be serialized, and
      * `reconstruct()` can then be used again to recreate the original
@@ -74,10 +72,10 @@ class Process {
      * should be treated as a pair. This is a bit ugly, but optimizations sadly
      * never made code prettier.
      */
-    void repopulate(const clap_process_t& process,
-                    AudioShmBuffer& shared_audio_buffers);
+  void repopulate(const clap_process_t& process,
+    AudioShmBuffer& shared_audio_buffers);
 
-    /**
+  /**
      * Reconstruct the original `clap_process_t` object passed to `repopulate()`
      * and return it. This is used in the Wine plugin host when handling a
      * `clap_plugin::process()` call.
@@ -95,11 +93,11 @@ class Process {
      * precision if a port supports it. The actual sample format used is stored
      * in our `clap::audio_buffer::AudioBuffer` serialization wrapper.
      */
-    const clap_process_t& reconstruct(
-        std::vector<std::vector<void*>>& input_pointers,
-        std::vector<std::vector<void*>>& output_pointers);
+  const clap_process_t& reconstruct(
+    std::vector<std::vector<void*>>& input_pointers,
+    std::vector<std::vector<void*>>& output_pointers);
 
-    /**
+  /**
      * A serializable wrapper around the output fields of `clap_process_t`, so
      * we only have to copy the information back that's actually important.
      * These fields are pointers to the corresponding fields in `Process`. On
@@ -113,26 +111,26 @@ class Process {
      *
      * @see YaProcessData
      */
-    struct Response {
-        // We store raw pointers instead of references so we can default
-        // initialize this object during deserialization
-        llvm::SmallVectorImpl<clap_audio_buffer_t>* audio_outputs = nullptr;
-        clap::events::EventList* out_events = nullptr;
+  struct Response {
+    // We store raw pointers instead of references so we can default
+    // initialize this object during deserialization
+    llvm::SmallVectorImpl<clap_audio_buffer_t>* audio_outputs = nullptr;
+    clap::events::EventList* out_events = nullptr;
 
-        template <typename S>
-        void serialize(S& s) {
-            assert(audio_outputs && out_events);
-            // Since these fields are references to the corresponding fields on
-            // the surrounding object, we're actually serializing those fields.
-            // This means that on the plugin side we can _only_ deserialize into
-            // an existing object, since our serializing code doesn't touch the
-            // actual pointers.
-            s.container(*audio_outputs, 1 << 14);
-            s.object(*out_events);
-        }
-    };
+    template <typename S>
+    void serialize(S& s) {
+      assert(audio_outputs && out_events);
+      // Since these fields are references to the corresponding fields on
+      // the surrounding object, we're actually serializing those fields.
+      // This means that on the plugin side we can _only_ deserialize into
+      // an existing object, since our serializing code doesn't touch the
+      // actual pointers.
+      s.container(*audio_outputs, 1 << 14);
+      s.object(*out_events);
+    }
+  };
 
-    /**
+  /**
      * Create a `clap::process::Process::Response` object that refers to the
      * output fields in this object. The object doesn't store any actual data,
      * and may not outlive this object. We use this so we only have to copy the
@@ -145,88 +143,87 @@ class Process {
      * **must** be received into, since we're deserializing directly into some
      * pointers.
      */
-    Response& create_response() noexcept;
+  Response& create_response() noexcept;
 
-    /**
+  /**
      * Write all of this output data back to the host's `clap_process_t` object.
      * During this process we'll also write the output audio from the
      * corresponding shared memory audio buffers back.
      */
-    void write_back_outputs(const clap_process_t& process,
-                            const AudioShmBuffer& shared_audio_buffers);
+  void write_back_outputs(const clap_process_t& process,
+    const AudioShmBuffer& shared_audio_buffers);
 
-    template <typename S>
-    void serialize(S& s) {
-        s.value8b(steady_time_);
-        s.value4b(frames_count_);
+  template <typename S>
+  void serialize(S& s) {
+    s.value8b(steady_time_);
+    s.value4b(frames_count_);
 
-        s.ext(transport_, bitsery::ext::InPlaceOptional{});
+    s.ext(transport_, bitsery::ext::InPlaceOptional{});
 
-        // Both `audio_inputs_` and `audio_outputs_` only store metadata. The
-        // actual audio is sent using an accompanying `AudioShmBuffer` object.
-        s.container(audio_inputs_, 1 << 14);
-        s.container1b(audio_inputs_type_, 1 << 14);
-        s.container(audio_outputs_, 1 << 14);
-        s.container1b(audio_outputs_type_, 1 << 14);
+    // Both `audio_inputs_` and `audio_outputs_` only store metadata. The
+    // actual audio is sent using an accompanying `AudioShmBuffer` object.
+    s.container(audio_inputs_, 1 << 14);
+    s.container1b(audio_inputs_type_, 1 << 14);
+    s.container(audio_outputs_, 1 << 14);
+    s.container1b(audio_outputs_type_, 1 << 14);
 
-        // We don't need to serialize the output events because this will always
-        // be empty on the Wine side. The response is sent back through the
-        // separate `Response` object
-        s.object(in_events_);
-    }
+    // We don't need to serialize the output events because this will always
+    // be empty on the Wine side. The response is sent back through the
+    // separate `Response` object
+    s.object(in_events_);
+  }
 
-    // These fields are input and context data read from the original
-    // `clap_process_t` object
+  // These fields are input and context data read from the original
+  // `clap_process_t` object
 
-    int64_t steady_time_ = 0;
-    uint32_t frames_count_ = 0;
+  int64_t steady_time_ = 0;
+  uint32_t frames_count_ = 0;
 
-    // This is an optional field
-    std::optional<clap_event_transport_t> transport_;
+  // This is an optional field
+  std::optional<clap_event_transport_t> transport_;
 
-    /**
-     * The audio input buffers for every port. We'll only serialize the metadata
-     * During `reconstruct()` the channel pointers pointers in these objects
-     * will be set to point to our shared memory surface that holds the actual
-     * audio data.
-     */
-    llvm::SmallVector<clap_audio_buffer_t, 8> audio_inputs_;
-    /**
+  /**
+   * The audio input buffers for every port. We'll only serialize the metadata
+   * During `reconstruct()` the channel pointers pointers in these objects
+   * will be set to point to our shared memory surface that holds the actual
+   * audio data.
+   */
+  llvm::SmallVector<clap_audio_buffer_t, 8> audio_inputs_;
+  /**
      * The types corresponding to each buffer in `audio_inputs_`. This needs to
      * be serialized separately since this information is encoded by setting one
      * of the two pointers instead of through a flag.
      */
-    llvm::SmallVector<clap::audio_buffer::AudioBufferType, 8>
-        audio_inputs_type_;
+  llvm::SmallVector<clap::audio_buffer::AudioBufferType, 8>
+  audio_inputs_type_;
 
-    /**
+  /**
      * The audio output buffers for every port. We'll only serialize the
      * metadata During `reconstruct()` the channel pointers pointers in these
      * objects will be set to point to our shared memory surface that holds the
      * actual audio data.
      */
-    llvm::SmallVector<clap_audio_buffer_t, 8> audio_outputs_;
-    /**
+  llvm::SmallVector<clap_audio_buffer_t, 8> audio_outputs_;
+  /**
      * The types corresponding to each buffer in `audio_outputs_`. This needs to
      * be serialized separately since this information is encoded by setting one
      * of the two pointers instead of through a flag.
      */
-    llvm::SmallVector<clap::audio_buffer::AudioBufferType, 8>
-        audio_outputs_type_;
+  llvm::SmallVector<clap::audio_buffer::AudioBufferType, 8>
+  audio_outputs_type_;
 
-    clap::events::EventList in_events_;
-    clap::events::EventList out_events_;
+  clap::events::EventList in_events_;
+  clap::events::EventList out_events_;
+private:
+  // These last few members are used on the Wine plugin host side to
+  // reconstruct the original `clap_process_t` object. Here we also initialize
+  // these output fields so the Windows CLAP plugin can write to them though a
+  // regular `ProcessData` object. Finally we can wrap these output fields
+  // back into a `clap::process::Process::Response` using `create_response()`.
+  // so they can be serialized and written back to the host's `clap_process_t`
+  // object.
 
-   private:
-    // These last few members are used on the Wine plugin host side to
-    // reconstruct the original `clap_process_t` object. Here we also initialize
-    // these output fields so the Windows CLAP plugin can write to them though a
-    // regular `ProcessData` object. Finally we can wrap these output fields
-    // back into a `clap::process::Process::Response` using `create_response()`.
-    // so they can be serialized and written back to the host's `clap_process_t`
-    // object.
-
-    /**
+  /**
      * This is a `Response` object that contains pointers to other fields in
      * this struct so we can serialize to and from them.
      *
@@ -234,14 +231,13 @@ class Process {
      *       directly receive data into this object, avoiding the need for any
      *       allocations.
      */
-    Response response_object_;
+  Response response_object_;
 
-    /**
+  /**
      * The process data we reconstruct from the other fields during
      * `reconstruct()`.
      */
-    clap_process_t reconstructed_process_data_{};
+  clap_process_t reconstructed_process_data_{};
 };
 
-}  // namespace process
-}  // namespace clap
+}
